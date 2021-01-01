@@ -1,0 +1,11 @@
+# idea
+.idea
+
+# log
+*.log
+
+# python
+__pycache__
+
+# upload folder
+upload
