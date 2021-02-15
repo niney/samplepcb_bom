@@ -3,6 +3,7 @@ import json
 import os
 
 import numpy as np
+import numbers
 import openpyxl
 import pandas as pd
 import requests as reqs
@@ -121,17 +122,17 @@ def search_excel_column(query):
     return ccResult
 
 
-def search_pcb_header_by_row(sheet, header_column_idx):
-    result = []
-    row_list = []
-    for row in tuple(sheet.rows)[header_column_idx]:
-        if row.value is None:
-            continue
-        row_list.append(row.value)
-
-    URL = 'http://localhost:8080/api/pcbColumn/_searchSentenceList'
-    print(row_list)
-    reqs.post(URL, json={'queryColumnNameList': row_list})
+# def search_pcb_header_by_row(sheet, header_column_idx):
+#     result = []
+#     row_list = []
+#     for row in tuple(sheet.rows)[header_column_idx]:
+#         if row.value is None:
+#             continue
+#         row_list.append(row.value)
+#
+#     URL = 'http://localhost:8080/api/pcbColumn/_searchSentenceList'
+#     print(row_list)
+#     reqs.post(URL, json={'queryColumnNameList': row_list})
 
 
 def search_pcb_header_each(sheet):
@@ -150,7 +151,7 @@ def search_pcb_header_each(sheet):
         response_data = body['data']
         score_tuple[idx] = response_data['averageScore']
         sentence_results.append(response_data)
-        if idx == 7:
+        if idx == 3:
             break
 
     header_column_idx = get_index_max_value(score_tuple)
@@ -260,6 +261,54 @@ def bom_ml(query_list):
     return {'predictResults': results, 'averageScore': np.mean(score_list)}
 
 
+def is_digit_by_list(any_list):
+    """
+    리스트가 전부 숫자인지 체크
+    :param any_list: 리스트
+    :return:
+    """
+    isdigit = False
+    for val in any_list:
+        if isinstance(val, str) and val.isdigit():  # 문자형이지만 숫자라면
+            isdigit = True
+        elif isinstance(val, numbers.Number):  # 숫자라면
+            isdigit = True
+        else:
+            isdigit = False  # 숫자가 아닌경우
+
+        if not isdigit:
+            break
+
+    return isdigit
+
+
+def is_increment_digit_by_list(any_list):
+    """
+    리스트가 전부 숫자인지와 증가하는지 체크
+    :param any_list: 리스트
+    :return:
+    """
+    isdigit = False
+    pre_val = False
+    for val in any_list:
+        if isinstance(val, str) and val.isdigit():  # 문자형이지만 숫자라면
+            isdigit = True
+        elif isinstance(val, numbers.Number):  # 숫자라면
+            isdigit = True
+        else:
+            return False  # 숫자가 아닌경우
+
+        if isdigit:
+            val = int(val)
+
+        if pre_val and pre_val > val:
+            return False
+
+        pre_val = val
+
+    return isdigit
+
+
 def bom_ml_cols(query_list):
     global tfidf_vect
     global lr_clf
@@ -274,22 +323,37 @@ def bom_ml_cols(query_list):
         score = max(predict_proba_list[idx]) * 100
         if type(None).__name__ == meta['type']:
             score = 0
-            score_list.append(score)
+            # score_list.append(score) # None, 0 일때는 평균점수에 반영하지 않는다
         else:
             score_list.append(score)
+
+        if len(score_list) == 0:
+            score_list.append(0)
 
         meta['predict'] = predict_list[idx].item()
         meta['score'] = score
         results.append(meta)
 
+    queries = [result['query'] for result in results]
+    if is_increment_digit_by_list(queries):
+        return {'predict': 99, 'predictResults': results, 'averageScore': 100}  # 99 는 No
+
     predicts = [result['predict'] for result in results]
+
     data_count = collections.Counter(predicts)
 
     def f1(x):
         return data_count[x]
 
     max_cnt = max(data_count.keys(), key=f1)
-    return {'predict': max_cnt, 'predictResults': results, 'averageScore': np.mean(score_list)}
+
+    # 예상된 분류의 점수값만 추가하여 평균계산
+    predict_score_list = []
+    for result in results:
+        if result['predict'] == max_cnt:
+            predict_score_list.append(result['score'])
+
+    return {'predict': max_cnt, 'predictResults': results, 'averageScore': np.mean(predict_score_list)}
 
 
 def search_pcb_column_each(sheet, start_item_index, header_column_search_list):
@@ -354,6 +418,11 @@ def search_pcb_column_cols(sheet, start_item_index, header_column_search_list):
 
 
 def analysis_bom(query):
+    """
+    BOM 분석
+    :param query: 파일명
+    :return:
+    """
     column_cnt_list, sheet = load_bom_excel(query)
     search_result = search_pcb_header_each(sheet)
     item_detail = search_pcb_column_each(sheet, search_result['headerColumnIdx'] + 1,

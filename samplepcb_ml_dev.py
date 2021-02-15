@@ -69,11 +69,17 @@ if __name__ == '__main__':
 from imp import reload
 reload(colanal)
 
-# column_cnt_list, sheet = colanal.load_bom_excel('BOM_3_YONG.xlsx')
-column_cnt_list, sheet = colanal.load_bom_excel('1GuardFin_1_70.xls')
-# column_cnt_list, sheet = colanal.load_bom_excel('PartList_DRSD-Atype_A_TOP_Rev02A_r02.xlsx')
-search_result = colanal.search_pcb_header_each(sheet)
 colanal.bom_ml_init()
-item_detail = colanal.search_pcb_column_each(sheet, search_result['headerColumnIdx'] + 1, search_result['headerDetail']['pcbColumnSearchList'])
-item_detail2 = colanal.search_pcb_column_cols(sheet, search_result['headerColumnIdx'] + 1, search_result['headerDetail']['pcbColumnSearchList'])
-print(item_detail2)
+
+# column_cnt_list, sheet = colanal.load_bom_excel('BOM_2.xlsx')
+# column_cnt_list, sheet = colanal.load_bom_excel('1GuardFin_1_70.xls')
+# column_cnt_list, sheet = colanal.load_bom_excel('PartList_DRSD-Atype_A_TOP_Rev02A_r02.xlsx')
+# search_result = colanal.search_pcb_header_each(sheet)
+# item_detail = colanal.search_pcb_column_each(sheet, search_result['headerColumnIdx'] + 1, search_result['headerDetail']['pcbColumnSearchList'])
+# item_detail2 = colanal.search_pcb_column_cols(sheet, search_result['headerColumnIdx'] + 1, search_result['headerDetail']['pcbColumnSearchList'])
+# print(item_detail2)
+
+
+result = colanal.analysis_bom("PartList_DRSD-Atype_A_TOP_Rev02A_r02.xlsx")
+print(result)
+

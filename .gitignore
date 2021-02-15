@@ -3,6 +3,7 @@
 
 # log
 *.log
+*.log.*
 
 # python
 __pycache__
