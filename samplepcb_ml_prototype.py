@@ -66,6 +66,23 @@ app = Flask(__name__)
 # cors
 cors = CORS(app, resources={r"/api/*": {"origins": "*"}})
 
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    return "running"
+
+
+@app.route('/api', methods=['GET', 'POST'])
+def indexApi():
+    return "running"
+
+
+@app.route('/api/init', methods=['GET'])
+def init():
+    colanal.bom_ml_init_by_api()
+    return jsonify({'result': True})
+
+
 @app.route('/api/searchColumn', methods=['GET', 'POST'])
 def search_column():
     # 'PartList_DRSD-Atype A TOP Rev02A r02.xlsx'
@@ -94,7 +111,8 @@ if __name__ == '__main__':
         app.config.from_object(config.Config)
 
     logger = make_logger()
-    colanal.bom_ml_init()  # ml init
+    # colanal.bom_ml_init()  # ml init
+    colanal.bom_ml_init_by_api()
     logger.info("fit init complete!!")
     app.run(host='0.0.0.0', port=8099)
     logger.info('stop')

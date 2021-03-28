@@ -151,7 +151,7 @@ def search_pcb_header_each(sheet):
         response_data = body['data']
         score_tuple[idx] = response_data['averageScore']
         sentence_results.append(response_data)
-        if idx == 3:
+        if idx == 13:
             break
 
     header_column_idx = get_index_max_value(score_tuple)
@@ -226,6 +226,31 @@ def bom_ml_init():
 
     X_train = [str(x) for x in X[0].tolist()]
     y_train = y.tolist()
+
+    tfidf_vect.fit(X_train)
+    X_train_tfidf_vect = tfidf_vect.transform(X_train)
+
+    lr_clf.fit(X_train_tfidf_vect, y_train)
+
+def bom_ml_init_by_api():
+
+    global tfidf_vect
+    global lr_clf
+
+    tfidf_vect = TfidfVectorizer(stop_words='english', ngram_range=(1, 1), max_df=100)
+    lr_clf = LogisticRegression(C=5)
+
+    URL = 'http://localhost:8080/api/pcbItem/_allItemGroupByTarget'
+    response = reqs.get(URL)
+    body = json.loads(response.text)
+
+    X_train = []
+    y_train = []
+    for items in body['data']:
+        for item in items:
+            X_train.append(item['itemName'])
+            y_train.append(item['target'])
+
 
     tfidf_vect.fit(X_train)
     X_train_tfidf_vect = tfidf_vect.transform(X_train)
