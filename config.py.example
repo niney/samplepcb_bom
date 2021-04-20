@@ -1,0 +1,10 @@
+class Config:
+    UPLOAD_DIR = r""
+
+
+class DevelopmentConfig:
+    UPLOAD_DIR = r""
+
+
+class ProductionConfig:
+    UPLOAD_DIR = r""
