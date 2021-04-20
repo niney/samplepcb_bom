@@ -1,10 +1,13 @@
 class Config:
     UPLOAD_DIR = r""
+    OCTOPART_APIKEY = ""
 
 
 class DevelopmentConfig:
     UPLOAD_DIR = r""
+    OCTOPART_APIKEY = ""
 
 
 class ProductionConfig:
     UPLOAD_DIR = r""
+    OCTOPART_APIKEY = ""

@@ -12,3 +12,6 @@ python samplepcb_embed.py
 
 ### data 폴더
 - 학습할 데이터
+
+### config.py
+- OCTOPART_APIKEY : octopart api key 설정
