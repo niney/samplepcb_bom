@@ -309,7 +309,9 @@ class ClientHelper:
                 
                 hits
         
-                manufacturer_agg {
+                manufacturer_agg(
+                  size: 255
+                ) {
                   company {
                     id
                     name
@@ -334,7 +336,9 @@ class ClientHelper:
                   }
                 }
                 
-                category_agg {
+                category_agg(
+                  size: 255
+                ) {
                   category {
                     parent_id
                     id
