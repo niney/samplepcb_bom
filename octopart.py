@@ -107,18 +107,24 @@ class ClientHelper:
             part['sellers'] = searched_sellers[0]
 
     def setting_margin(self, part):
-        if 'sellers' in part:
-            searched_seller = part['sellers']
-            self.setting_margin_by_seller(searched_seller)
-
+        """
+        가격에 마진을 적용
+        seller 는 복사본을 쓰기 때문에 한군데만 적용시켜준다
+        :param part:
+        :return:
+        """
         if 'sellersAll' in part:
             for seller in part['sellersAll']:
                 self.setting_margin_by_seller(seller)
+        else:
+            searched_seller = part['sellers']
+            self.setting_margin_by_seller(searched_seller)
 
     def setting_margin_by_seller(self, seller):
         if 'offers' in seller and 'prices' in seller['offers']:
             for price in seller['offers']['prices']:
                 price['converted_price'] = price['converted_price'] + (price['converted_price'] * 0.02)
+                price['marginRate'] = 2
 
     def get_parts_query(self):
         """
