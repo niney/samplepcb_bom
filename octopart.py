@@ -9,6 +9,7 @@ class ClientHelper:
     samplepcb_auth_provider = ['mouser', 'digi-key', 'element14-apac']
 
     def part_sort(self, x, y):
+        # 공급업체
         x_company = x['company']
         y_company = y['company']
         if len(x_company) == 0 and len(y_company) != 0:
@@ -16,10 +17,11 @@ class ClientHelper:
         if len(y_company) == 0 and len(x_company) != 0:
             return -1  # x_company 앞으로
         if len(x_company) != 0 and len(y_company) != 0:
-            if y_company['slug'] in self.samplepcb_auth_provider:
-                return 1
-            if x_company['slug'] in self.samplepcb_auth_provider:
-                return -1
+            if not (y_company['slug'] in self.samplepcb_auth_provider and x_company['slug'] in self.samplepcb_auth_provider):
+                if y_company['slug'] in self.samplepcb_auth_provider:
+                    return 1
+                if x_company['slug'] in self.samplepcb_auth_provider:
+                    return -1
 
         x_offer = x['offers']
         y_offer = y['offers']
@@ -35,11 +37,11 @@ class ClientHelper:
             y_price = -1
             for price_info in x_offer['prices']:
                 if price_info['quantity'] == 1:
-                    x_price = price_info['price']
+                    x_price = price_info['converted_price']
 
             for price_info in y_offer['prices']:
                 if price_info['quantity'] == 1:
-                    y_price = price_info['price']
+                    y_price = price_info['converted_price']
 
             # 1개의 가격정보 여부 체크
             if x_price == -1 and y_offer['inventory_level'] > 0:
@@ -86,7 +88,7 @@ class ClientHelper:
 
         return 0
 
-    def setting_lowest_price(self, part):
+    def setting_lowest_price(self, part, is_copy_sellers_all=False):
         for i, seller in enumerate(part['sellers']):
             cut_tape_offer = None
             for offer in seller['offers']:
@@ -105,6 +107,8 @@ class ClientHelper:
         searched_sellers = sorted(part['sellers'], key=cmp_to_key(self.part_sort))
         if len(searched_sellers) > 0:
             part['sellers'] = searched_sellers[0]
+        if is_copy_sellers_all:
+            part['sellersAll'] = searched_sellers
 
     def setting_margin(self, part):
         """

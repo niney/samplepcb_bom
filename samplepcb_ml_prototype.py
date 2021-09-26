@@ -138,9 +138,10 @@ def search_parts():
         if parts['search']['results'] is not None:
             for result in parts['search']['results']:
                 part = result['part']
+                is_copy_sellers_all = False
                 if 'sellersAll' in request.values:
-                    part['sellersAll'] = part['sellers']
-                client_helper.setting_lowest_price(part)
+                    is_copy_sellers_all = True
+                client_helper.setting_lowest_price(part, is_copy_sellers_all)
                 client_helper.setting_margin(part)
 
     # print(parts.results)
@@ -167,9 +168,10 @@ def search_parts_by_ids():
 
     if len(resp['parts']) > 0:
         for part in resp['parts']:
+            is_copy_sellers_all = False
             if 'sellersAll' in request.values:
-                part['sellersAll'] = part['sellers']
-            client_helper.setting_lowest_price(part)
+                is_copy_sellers_all = True
+            client_helper.setting_lowest_price(part, is_copy_sellers_all)
             client_helper.setting_margin(part)
     return jsonify(resp)
 
