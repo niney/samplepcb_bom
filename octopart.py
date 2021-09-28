@@ -127,7 +127,7 @@ class ClientHelper:
     def setting_margin_by_seller(self, seller):
         if 'offers' in seller and 'prices' in seller['offers']:
             for price in seller['offers']['prices']:
-                price['converted_price'] = price['converted_price'] + (price['converted_price'] * 0.02)
+                price['converted_price'] = price['converted_price'] + (price['converted_price'] * 0.07)
                 price['marginRate'] = 2
 
     def get_parts_query(self):
