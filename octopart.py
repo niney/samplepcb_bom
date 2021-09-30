@@ -6,7 +6,7 @@ from functools import cmp_to_key
 
 
 class ClientHelper:
-    samplepcb_auth_provider = ['mouser', 'digi-key', 'element14-apac']
+    samplepcb_auth_provider = ['mouser', 'digi-key', 'element14-apac', 'lcsc']
 
     def part_sort(self, x, y):
         # 공급업체
