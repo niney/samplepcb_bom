@@ -224,7 +224,7 @@ class ClientHelper:
         q_str = ''
         categories_str = ''
         if q is not None:
-            q_str = 'q: "' + q + '"\n'
+            q_str = 'q: "' + q.replace("\n", "") + '"\n'
 
         page_str = 'start: ' + str((int(page) - 1) * 10) + '\n'
 
@@ -292,6 +292,15 @@ class ClientHelper:
         if param is not None and 'specAggsNames' in param:
             spec_aggs_names_str = " ".join(param['specAggsNames'])
 
+        sort_str = ''
+        if param is not None and 'sort' in param:
+            sort_str = 'sort: "' + param['sort'] + '"\n'
+            sort_str = sort_str + 'sort_dir: asc\n'
+
+        in_stock_only_str = ''
+        if param is not None and 'inStockOnly' in param:
+            in_stock_only_str = 'in_stock_only: ' + param['inStockOnly'] + '\n'
+
         query = '''
             query partSearch {
             
@@ -299,6 +308,8 @@ class ClientHelper:
             
               search(
                 ''' + q_str + '''
+                ''' + sort_str + '''
+                ''' + in_stock_only_str + '''
                 country: "KR"
                 currency: "KRW"
                 ''' + page_str + '''
@@ -375,6 +386,27 @@ class ClientHelper:
             }
         '''
         resp = client.execute(query, param)
+        return json.loads(resp)['data']
+
+    def get_parts_mpn(self, client, q):
+        query = '''
+            query partMpnSearch($q: String!) {
+                search_mpn(
+                    q: $q
+                    country: "KR"
+                    currency: "KRW"
+                    limit: 1
+                ) {
+                    hits
+                    results {
+                      part {
+                        mpn
+                      }
+                    }
+                }
+            }
+        '''
+        resp = client.execute(query, {'q': q})
         return json.loads(resp)['data']
 
     def get_categories(self, client, param=None):

@@ -122,7 +122,7 @@ def search_column():
 
 
 @app.route('/api/searchParts', methods=['GET', 'POST'])
-def search_parts():
+def search_parts(retry_num=1):
     client = graph_ql_client.GraphQLClient('https://octopart.com/api/v4/endpoint')
     client.inject_token(app.config['OCTOPART_APIKEY'])
     client_helper = octopart.ClientHelper()
@@ -133,6 +133,10 @@ def search_parts():
         parts = client_helper.get_parts(client, request.values['q'], page, request.get_json())
     else:
         parts = client_helper.get_parts(client, None, page, request.get_json())
+
+    if parts is None and retry_num < 5:
+        logger.info('retry search parts')
+        return search_parts(retry_num + 1)
 
     if parts['search']['hits'] > 0:
         if parts['search']['results'] is not None:
@@ -145,6 +149,24 @@ def search_parts():
                 client_helper.setting_margin(part)
 
     # print(parts.results)
+    return jsonify(parts)
+
+
+@app.route('/api/searchPartsMpn', methods=['GET', 'POST'])
+def search_parts_mpn():
+    client = graph_ql_client.GraphQLClient('https://octopart.com/api/v4/endpoint')
+    client.inject_token(app.config['OCTOPART_APIKEY'])
+    client_helper = octopart.ClientHelper()
+    parts = client_helper.get_parts_mpn(client, request.values['q'])
+    if 'search_mpn' in parts and 'results' in (parts['search_mpn']) and \
+            (parts['search_mpn']['results']) is not None and 'part' in (parts['search_mpn']['results'][0]):
+        mpn = parts['search_mpn']['results'][0]['part']['mpn']
+        if mpn == request.values['q']:
+            parts['same'] = True
+        else:
+            parts['same'] = False
+    if 'same' not in parts:
+        parts['same'] = False
     return jsonify(parts)
 
 
