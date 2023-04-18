@@ -232,8 +232,8 @@ def bom_ml_init():
 
     lr_clf.fit(X_train_tfidf_vect, y_train)
 
-def bom_ml_init_by_api():
 
+def bom_ml_init_by_api():
     global tfidf_vect
     global lr_clf
 
@@ -250,7 +250,6 @@ def bom_ml_init_by_api():
         for item in items:
             X_train.append(item['itemName'])
             y_train.append(item['target'])
-
 
     tfidf_vect.fit(X_train)
     X_train_tfidf_vect = tfidf_vect.transform(X_train)
@@ -286,52 +285,77 @@ def bom_ml(query_list):
     return {'predictResults': results, 'averageScore': np.mean(score_list)}
 
 
-def is_digit_by_list(any_list):
-    """
-    리스트가 전부 숫자인지 체크
-    :param any_list: 리스트
-    :return:
-    """
-    isdigit = False
-    for val in any_list:
-        if isinstance(val, str) and val.isdigit():  # 문자형이지만 숫자라면
-            isdigit = True
-        elif isinstance(val, numbers.Number):  # 숫자라면
-            isdigit = True
-        else:
-            isdigit = False  # 숫자가 아닌경우
-
-        if not isdigit:
-            break
-
-    return isdigit
-
-
-def is_increment_digit_by_list(any_list):
+def is_increment_digit_by_list(any_list, percent):
     """
     리스트가 전부 숫자인지와 증가하는지 체크
     :param any_list: 리스트
     :return:
     """
-    isdigit = False
+    is_digit = False
     pre_val = False
+    increment_cnt = 0
+    none_digit_cnt = 0
+    any_list_len = len(any_list)
     for val in any_list:
         if isinstance(val, str) and val.isdigit():  # 문자형이지만 숫자라면
-            isdigit = True
+            is_digit = True
         elif isinstance(val, numbers.Number):  # 숫자라면
-            isdigit = True
+            is_digit = True
+        elif val is None or val == 'None':
+            # none_digit_cnt = none_digit_cnt + 1
+            any_list_len = any_list_len - 1
+            continue
         else:
-            return False  # 숫자가 아닌경우
+            continue
 
-        if isdigit:
+        if is_digit:
             val = int(val)
 
-        if pre_val and pre_val > val:
-            return False
+        if pre_val and pre_val < val:
+            increment_cnt = increment_cnt + 1
 
         pre_val = val
 
-    return isdigit
+    return is_digit and (increment_cnt / (any_list_len - none_digit_cnt)) * 100 >= percent
+
+
+def is_digit_by_list(any_list, percent):
+    """
+    리스트가 전부 숫자인지와 증가하는지 체크
+    :param any_list: 리스트
+    :return:
+    """
+    any_list_len = len(any_list)
+    digit_cnt = 0
+    not_digit_cnt = 0
+
+    for val in any_list:
+        if isinstance(val, str) and val.isdigit():  # 문자형이지만 숫자라면
+            digit_cnt = digit_cnt + 1
+        elif isinstance(val, numbers.Number):  # 숫자라면
+            digit_cnt = digit_cnt + 1
+        elif val is None or val == 'None':
+            any_list_len = any_list_len - 1
+            continue
+        else:
+            not_digit_cnt = not_digit_cnt + 1
+
+    if any_list_len == 0:
+        return False
+    return (digit_cnt / any_list_len) * 100 >= percent
+
+def starts_with_by_list(any_list, str, percent):
+    """
+    리스트가 전부 숫자인지와 증가하는지 체크
+    :param any_list: 리스트
+    :return:
+    """
+    s_cnt = 0
+    for val in any_list:
+        if val[0:1] == str:
+            s_cnt = s_cnt + 1
+
+    return (s_cnt / len(any_list)) * 100 >= percent
 
 
 def bom_ml_cols(query_list):
@@ -360,8 +384,12 @@ def bom_ml_cols(query_list):
         results.append(meta)
 
     queries = [result['query'] for result in results]
-    if is_increment_digit_by_list(queries):
+    if is_increment_digit_by_list(queries, 80):
         return {'predict': 99, 'predictResults': results, 'averageScore': 100}  # 99 는 No
+    if is_digit_by_list(queries, 75):
+        return {'predict': 4, 'predictResults': results, 'averageScore': 100}  # 4 는 수량
+    if starts_with_by_list(queries, '=', 75):
+        return {'predict': 100, 'predictResults': results, 'averageScore': 100}  # 100 는 엑셀서식
 
     predicts = [result['predict'] for result in results]
 
@@ -374,11 +402,17 @@ def bom_ml_cols(query_list):
 
     # 예상된 분류의 점수값만 추가하여 평균계산
     predict_score_list = []
+    none_score = 0
     for result in results:
-        if result['predict'] == max_cnt:
+        if result['predict'] == max_cnt and result['score'] != 0:
             predict_score_list.append(result['score'])
+        if result['score'] == 0:
+            none_score = none_score + 1
 
-    return {'predict': max_cnt, 'predictResults': results, 'averageScore': np.mean(predict_score_list)}
+    if len(predict_score_list) == 0:
+        predict_score_list.append(0)
+
+    return {'predict': max_cnt, 'predictResults': results, 'averageScore': np.mean(predict_score_list) - none_score}
 
 
 def search_pcb_column_each(sheet, start_item_index, header_column_search_list):
