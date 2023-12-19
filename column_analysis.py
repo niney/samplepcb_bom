@@ -1,9 +1,11 @@
 import collections
 import json
+import numbers
 import os
+import re
+from urllib.parse import urlparse
 
 import numpy as np
-import numbers
 import openpyxl
 import pandas as pd
 import requests as reqs
@@ -13,9 +15,19 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
+from data_extractor import DataExtractor
+from parts_analysis import PartsAnalysis
+
+extractor = DataExtractor()
+analyzer = PartsAnalysis()
 
 tfidf_vect = TfidfVectorizer(stop_words='english', ngram_range=(1, 1), max_df=100)
 lr_clf = LogisticRegression(C=5)
+
+REFERENCE = 1
+PART_NUMBER = 2
+PACKAGE = 6
+VALUE = 9
 
 
 # 엑셀 파일 로드
@@ -27,7 +39,7 @@ def load_bom_excel(filename, sheet_idx=0):
         cvt_xls_to_xlsx(file_path, file_path + 'x')
         file_path = file_path + 'x'
 
-    bom_excel = openpyxl.load_workbook(file_path)
+    bom_excel = openpyxl.load_workbook(file_path, data_only=True)
 
     # 행별 실제 사용하는 컬럼 개수 알아내기
     sheet = bom_excel.worksheets[sheet_idx]
@@ -138,23 +150,35 @@ def search_excel_column(query):
 def search_pcb_header_each(sheet):
     sentence_results = []
     score_tuple = {}
+    score_tuple_for_bom = {}
     for (idx, rows) in enumerate(sheet.rows):
         row_list = []
+        row_list_for_bom = []
         for row in rows:
             if row.value is not None:
                 row_list.append(str(row.value))
             else:
                 row_list.append('')
+
+            column_target = None
+            if row.value is None:
+                column_target = None
+            row_list_for_bom.append({'type': type(row.value).__name__, 'columnIdx': idx, 'columnTarget': column_target,
+                                     'query': str(row.value).strip()})
+
         URL = 'http://localhost:8080/api/pcbColumn/_searchSentenceList'
         response = reqs.post(URL, json={'queryColumnNameList': row_list})
         body = json.loads(response.text)
         response_data = body['data']
         score_tuple[idx] = response_data['averageScore']
         sentence_results.append(response_data)
+        score_tuple_for_bom[idx] = bom_ml(row_list_for_bom, True)
         if idx == 13:
             break
 
     header_column_idx = get_index_max_value(score_tuple)
+    if score_tuple_for_bom[header_column_idx]['averageScore'] < 50:
+        header_column_idx = header_column_idx + 1
     return {'headerColumnIdx': header_column_idx + 1, 'headerDetail': sentence_results[header_column_idx]}
 
 
@@ -257,7 +281,7 @@ def bom_ml_init_by_api():
     lr_clf.fit(X_train_tfidf_vect, y_train)
 
 
-def bom_ml(query_list):
+def bom_ml(query_list, zero_score=False):
     global tfidf_vect
     global lr_clf
 
@@ -271,12 +295,18 @@ def bom_ml(query_list):
         score = max(predict_proba_list[idx]) * 100
         if type(None).__name__ == meta['type']:
             score = 0
-            # score_list.append(score) # None, 0 일때는 평균점수에 반영하지 않는다
+            if zero_score:
+                score_list.append(score)
         else:
             score_list.append(score)
 
         meta['predict'] = predict_list[idx].item()
         meta['score'] = score
+        # classification 결과를 받아옴
+        classification_result = {k: v for k, v in classification(meta['query']).items() if k != 'productName'}
+        # classification_result가 비어 있지 않은 경우에만 meta['classification']에 값을 넣음
+        if classification_result:
+            meta['classification'] = classification_result
         results.append(meta)
 
     if len(score_list) == 0:
@@ -344,18 +374,167 @@ def is_digit_by_list(any_list, percent):
         return False
     return (digit_cnt / any_list_len) * 100 >= percent
 
+
 def starts_with_by_list(any_list, str, percent):
     """
     리스트가 전부 숫자인지와 증가하는지 체크
     :param any_list: 리스트
     :return:
     """
+    if not any_list:
+        return False
+
     s_cnt = 0
     for val in any_list:
         if val[0:1] == str:
             s_cnt = s_cnt + 1
 
     return (s_cnt / len(any_list)) * 100 >= percent
+
+
+def is_valid_url(url):
+    parsed_url = urlparse(url)
+    return bool(parsed_url.scheme) and bool(parsed_url.netloc)
+
+
+def percent_valid_urls(url_list, percent):
+    if not url_list:
+        return False
+
+    valid_urls = sum(is_valid_url(url) for url in url_list)
+    valid_percent = (valid_urls / len(url_list)) * 100
+
+    return valid_percent >= percent
+
+
+def calculate_none_percent(strings):
+    none_count = sum(1 for item in strings if item is None or item == "None")
+    none_percent = (none_count / len(strings)) * 100 if strings else 0
+    return none_percent
+
+
+def trim_none_or_empty_from_end(strings):
+    # 리스트 끝에서부터 None, 'None' 또는 빈 문자열이 아닌 첫 번째 요소 찾기
+    first_non_none_or_empty = next((i for i, item in enumerate(reversed(strings)) if item and item != "None"),
+                                   len(strings))
+
+    # 해당 인덱스를 사용하여 필요한 부분만 남기기
+    return strings[:len(strings) - first_non_none_or_empty]
+
+
+def percent_reference(item_list, percent, none_exclude=True):
+    if not item_list:
+        return False
+
+    pattern = re.compile(r"(?:^|,)[CRUJLSD]\d+(?:,|$)")
+
+    none_percent = calculate_none_percent(item_list)
+
+    # None 비율이 주어진 퍼센트 이상인 경우 False 반환
+    if none_percent >= percent:
+        return False
+
+    if none_exclude:
+        item_list = [item for item in item_list if item is not None and item != "None"]
+
+    matching = sum(bool(pattern.match(string)) for string in item_list)
+    matching_percent = (matching / len(item_list)) * 100
+
+    return matching_percent >= percent
+
+
+def classification(item_val):
+    title_text = analyzer.split_text(item_val)
+    return analyzer.parse_string(title_text)
+
+
+def percent_classification(item_list, percent, none_exclude=True):
+    successful_classifications = 0
+
+    if none_exclude:
+        item_list = [item for item in item_list if item is not None and item != "None"]
+
+    # item_list가 비어있거나 모든 항목이 제거된 경우 0을 반환하도록 처리
+    if not item_list:
+        return False
+
+    for item_val in item_list:
+        title_text = analyzer.split_text(item_val)
+        classifications = analyzer.parse_string(title_text)
+
+        key_count = len([key for key in classifications if key != 'productName'])
+
+        if key_count >= 1:
+            successful_classifications += 1
+
+    success_percent = (successful_classifications / len(item_list)) * 100
+    return success_percent >= percent
+
+
+def percent_package(str_list, percent):
+    if not str_list:
+        return False
+
+    successful_package = 0
+    for item_val in str_list:
+        size = extractor.extract_size_from_title(item_val)
+        if size:
+            successful_package += 1
+
+    # 성공 비율 계산
+    success_percent = (successful_package / len(str_list)) * 100
+    return success_percent >= percent
+
+
+def percent_none_for_is_pcb(item_list, percent):
+    none_count = 0
+    # 숫자가 아닌 요소만 필터링 (문자열 형태의 숫자도 포함)
+    filtered_list = [item for item in item_list if
+                     not (isinstance(item, (int, float)) or (isinstance(item, str) and item.isdigit()))]
+
+    for item_val in filtered_list:
+        title_text = analyzer.split_text(item_val)
+        classifications = analyzer.parse_string(title_text)
+
+        # '품명' 키를 제외하고 키의 개수를 계산
+        key_count = len([key for key in classifications if key != 'productName'])
+
+        if key_count >= 1:
+            return False
+
+        # None 값이거나 None 타입인 경우 카운트
+        if item_val is None or item_val == "None":
+            none_count += 1
+
+    # None 값의 비율 계산
+    none_percent = (none_count / len(filtered_list)) * 100 if filtered_list else 0
+    return none_percent >= percent
+
+
+def find_update_part_number_average_score(results):
+    # POST 요청을 보낼 URL
+    url = 'http://localhost:8080/api/pcbItem/_searchList?target=2'
+
+    for result in results:
+        if result['predict'] == 2:
+            item = result['predictResults']
+            # POST 요청을 보내고 응답을 받음
+            response = reqs.post(url, json=[l['query'] for l in item])
+
+            if response.status_code == 200:
+                data = response.json().get('data', [])
+
+                # _score 값들을 추출
+                scores = [record['_score'] for record in data]
+
+                # 평균 점수 계산
+                if scores:
+                    average_score = sum(scores) / len(scores)
+                else:
+                    average_score = 0  # 점수가 없는 경우 평균 점수를 0으로 설정
+
+                # 해당 항목에 averageScore 추가
+                result['averageScore'] = average_score
 
 
 def bom_ml_cols(query_list):
@@ -373,6 +552,8 @@ def bom_ml_cols(query_list):
         if type(None).__name__ == meta['type']:
             score = 0
             # score_list.append(score) # None, 0 일때는 평균점수에 반영하지 않는다
+        if meta['query'] == 'None':
+            score = 0
         else:
             score_list.append(score)
 
@@ -384,12 +565,22 @@ def bom_ml_cols(query_list):
         results.append(meta)
 
     queries = [result['query'] for result in results]
+    # 리스트 끝에서부터 None, 'None' 또는 빈 문자열이 아닌 첫 번째 요소 찾기
+    queries = trim_none_or_empty_from_end(queries)
+    if percent_reference(queries, 70):
+        return {'predict': REFERENCE, 'predictResults': results, 'averageScore': 100}
+    if percent_classification(queries, 40):
+        return {'predict': VALUE, 'predictResults': results, 'averageScore': 100}
+    if percent_package(queries, 60):
+        return {'predict': PACKAGE, 'predictResults': results, 'averageScore': 100}
     if is_increment_digit_by_list(queries, 80):
         return {'predict': 99, 'predictResults': results, 'averageScore': 100}  # 99 는 No
     if is_digit_by_list(queries, 75):
         return {'predict': 4, 'predictResults': results, 'averageScore': 100}  # 4 는 수량
     if starts_with_by_list(queries, '=', 75):
         return {'predict': 100, 'predictResults': results, 'averageScore': 100}  # 100 는 엑셀서식
+    if percent_valid_urls(queries, 75):
+        return {'predict': 98, 'predictResults': results, 'averageScore': 100}  # 98 는 URL
 
     predicts = [result['predict'] for result in results]
 
@@ -412,7 +603,8 @@ def bom_ml_cols(query_list):
     if len(predict_score_list) == 0:
         predict_score_list.append(0)
 
-    return {'predict': max_cnt, 'predictResults': results, 'averageScore': np.mean(predict_score_list) - none_score}
+    minus_score = (none_score / len(results)) * 100
+    return {'predict': max_cnt, 'predictResults': results, 'averageScore': np.mean(predict_score_list) - minus_score}
 
 
 def search_pcb_column_each(sheet, start_item_index, header_column_search_list):
@@ -439,11 +631,14 @@ PCB 컬럼 분석검색
 
         is_pcb_item = 'isPcbItem'
         if len(row_list) != 0:
-            ml_result = bom_ml(row_list)
-            if ml_result['averageScore'] > 50:
-                ml_result[is_pcb_item] = True
-            else:
+            if percent_none_for_is_pcb([l['query'] for l in row_list], 90):
                 ml_result[is_pcb_item] = False
+            else:
+                ml_result = bom_ml(row_list)
+                if ml_result['averageScore'] > 50:
+                    ml_result[is_pcb_item] = True
+                else:
+                    ml_result[is_pcb_item] = False
         else:
             ml_result[is_pcb_item] = False
 
@@ -473,6 +668,7 @@ def search_pcb_column_cols(sheet, start_item_index, header_column_search_list):
 
         ml_results.append(ml_result)
 
+    find_update_part_number_average_score(ml_results)
     return ml_results
 
 

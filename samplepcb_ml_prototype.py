@@ -6,8 +6,10 @@
 import json
 import logging
 from logging import handlers
+from flask_caching import Cache
 
 import column_analysis as colanal
+import eleparts_service
 import graph_ql_client
 import octopart
 
@@ -85,6 +87,11 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
+cache = Cache(app, config={
+    'CACHE_TYPE': 'SimpleCache',  # 간단한 메모리 기반 캐시
+    'CACHE_DEFAULT_TIMEOUT': 1800  # 캐시 유지 시간(초)
+})
+
 # cors
 cors = CORS(app, resources={r"/api/*": {"origins": "*"}})
 
@@ -122,6 +129,7 @@ def search_column():
 
 
 @app.route('/api/searchParts', methods=['GET', 'POST'])
+@cache.cached(timeout=1800, query_string=True)
 def search_parts(retry_num=1):
     client = graph_ql_client.GraphQLClient('https://octopart.com/api/v4/endpoint')
     client.inject_token(app.config['OCTOPART_APIKEY'])
@@ -129,10 +137,14 @@ def search_parts(retry_num=1):
     page = 1
     if 'page' in request.values:
         page = request.values['page']
-    if 'q' in request.values:
-        parts = client_helper.get_parts(client, request.values['q'], page, request.get_json())
+    if 'size' in request.values:
+        size = request.values['size']
     else:
-        parts = client_helper.get_parts(client, None, page, request.get_json())
+        size = 2
+    if 'q' in request.values:
+        parts = client_helper.get_parts(client, request.values['q'], page, size, request.get_json(silent=True))
+    else:
+        parts = client_helper.get_parts(client, None, page, size, request.get_json(silent=True))
 
     if parts is None and retry_num < 5:
         logger.info('retry search parts')
@@ -232,6 +244,10 @@ def search_suggested():
         parts = client_helper.get_suggested_filters(client, None, json_data)
     return jsonify(parts)
 
+
+@app.route('/api/searchEleparts', methods=['GET'])
+def search_eleparts():
+    return jsonify(eleparts_service.make_item(request.values['url']))
 
 if __name__ == '__main__':
     # try:

@@ -6,7 +6,7 @@ from functools import cmp_to_key
 
 
 class ClientHelper:
-    samplepcb_auth_provider = ['mouser', 'digi-key', 'element14-apac', 'lcsc']
+    samplepcb_auth_provider = ['mouser', 'digi-key', 'digikey', 'element14-apac', 'lcsc', 'rochester-electronics', 'rs', 'avnet']
 
     def part_sort(self, x, y):
         # 공급업체
@@ -97,11 +97,21 @@ class ClientHelper:
 
             if cut_tape_offer is None:
                 offers_list = part['sellers'][i]['offers']
-                if len(offers_list) == 1:
-                    random_idx = 0
+                # if len(offers_list) == 1:
+                #     random_idx = 0
+                # else:
+                #     random_idx = random.randrange(0, len(offers_list) - 1)
+                # inventory_level이 0이 아닌 요소들의 인덱스를 필터링
+                non_zero_indices = [index for index, offer in enumerate(offers_list) if offer['inventory_level'] != 0]
+
+                # 결과에 따라 처리
+                if non_zero_indices:
+                    # inventory_level이 0이 아닌 요소들 중에서 랜덤 인덱스 선택
+                    selected_index = random.choice(non_zero_indices)
                 else:
-                    random_idx = random.randrange(0, len(offers_list) - 1)
-                part['sellers'][i]['offers'] = part['sellers'][i]['offers'][random_idx]
+                    # 모든 요소의 inventory_level이 0인 경우, 전체 인덱스 범위에서 랜덤 선택
+                    selected_index = random.randrange(len(offers_list))
+                part['sellers'][i]['offers'] = part['sellers'][i]['offers'][selected_index]
             else:
                 part['sellers'][i]['offers'] = cut_tape_offer
         searched_sellers = sorted(part['sellers'], key=cmp_to_key(self.part_sort))
@@ -219,7 +229,7 @@ class ClientHelper:
             }
         '''
 
-    def get_parts(self, client, q, page=1, param=None):
+    def get_parts(self, client, q, page=1, size=2, param=None):
         filter_param_str = ''
         q_str = ''
         categories_str = ''
@@ -313,7 +323,7 @@ class ClientHelper:
                 country: "KR"
                 currency: "KRW"
                 ''' + page_str + '''
-                limit: 10
+                limit: ''' + str(size) + '''
                 ''' + filter_str + '''
                 
                 ) {
@@ -331,7 +341,7 @@ class ClientHelper:
                 }
                 
                 spec_aggs(
-                  attribute_names: "'''+ spec_aggs_names_str+'''"
+                  attribute_names: "''' + spec_aggs_names_str + '''"
                   size: 255
                 ) {
                   attribute {
