@@ -261,14 +261,14 @@ class ClientHelper:
                     filter_param_str += 'category_id : ["' + '","'.join(param['categories']['ids']) + '"]\n'
 
         filter_str = ''
-        if filter_param_str is not '':
+        if filter_param_str != '':
             filter_str = """
             filters: {
               """ + filter_param_str + """ 
             }
             """
 
-        if categories_str is not '':
+        if categories_str != '':
             categories_str = """
                 categories(
                     """ + categories_str + """
@@ -409,12 +409,36 @@ class ClientHelper:
                 ) {
                     hits
                     results {
+                      description
                       part {
                         mpn
                       }
                     }
                 }
             }
+        '''
+        resp = client.execute(query, {'q': q})
+        return json.loads(resp)['data']
+
+    def get_like_parts_mpn(self, client, q):
+        query = '''
+query partMpnSearch($q: String!) {
+    search(
+        q: $q
+        country: "KR"
+        currency: "KRW"
+        limit: 1
+    ) {
+        hits
+        results {
+          description
+          part {
+            mpn
+            name
+          }
+        }
+    }
+}
         '''
         resp = client.execute(query, {'q': q})
         return json.loads(resp)['data']
@@ -499,7 +523,7 @@ class ClientHelper:
                 filter_param_str += 'category_id : ["' + '","'.join(param['categories']['ids']) + '"]\n'
 
         filter_str = ''
-        if filter_param_str is not '':
+        if filter_param_str != '':
             filter_str = """
             filters: {
               """ + filter_param_str + """ 

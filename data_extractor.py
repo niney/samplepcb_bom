@@ -28,7 +28,8 @@ class DataExtractor:
         # 숫자 형식의 사이즈를 우선적으로 찾기
         for size in self.numeric_sizes:
             for word in title_words:
-                if size in word:
+                # 단어가 사이즈로 시작하고 그 뒤에 공백이나 문자열의 끝이 오는 경우 반환
+                if word.startswith(size) and (len(word) == len(size) or not word[len(size)].isalnum()):
                     return size
 
         # 그 외의 사이즈 포맷 찾기

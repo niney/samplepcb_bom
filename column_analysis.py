@@ -525,13 +525,14 @@ def find_update_part_number_average_score(results):
                 data = response.json().get('data', [])
 
                 # _score 값들을 추출
-                scores = [record['_score'] for record in data]
+                scores = [record.get('_score', 0) for record in data]
+
+                # _score 값이 없는 경우 건너뜀
+                if not scores:
+                    continue
 
                 # 평균 점수 계산
-                if scores:
-                    average_score = sum(scores) / len(scores)
-                else:
-                    average_score = 0  # 점수가 없는 경우 평균 점수를 0으로 설정
+                average_score = sum(scores) / len(scores)
 
                 # 해당 항목에 averageScore 추가
                 result['averageScore'] = average_score
@@ -695,3 +696,218 @@ def analysis_bom(query):
     }
     ccResult = {'result': True, 'data': data}
     return ccResult
+
+
+def analysis_bom_pandas(query):
+    """
+    BOM 분석
+    :param query: 파일명
+    :return:
+    """
+    column_cnt_list, sheet = load_bom_excel_pandas(query)
+    search_result = search_pcb_header_each_pandas(sheet)
+    item_detail = search_pcb_column_each_pandas(sheet, search_result['headerColumnIdx'] + 1,
+                                                search_result['headerDetail']['pcbColumnSearchList'])
+    cols_detail = search_pcb_column_cols_pandas(sheet, search_result['headerColumnIdx'] + 1,
+                                                search_result['headerDetail']['pcbColumnSearchList'])
+    max_column_cnt = get_max_count(column_cnt_list)
+
+    data = {
+        'headerColumnIdx': search_result['headerColumnIdx'],
+        'maxColumnCnt': max_column_cnt,
+        'headerDetail': search_result['headerDetail'],
+        'itemDetail': item_detail,
+        'colsDetail': cols_detail
+    }
+    ccResult = {'result': True, 'data': data}
+    return ccResult
+
+
+def load_bom_excel_pandas(filename, sheet_idx=0):
+    """
+    Pandas를 사용하여 Excel 파일을 로드하고 데이터 전처리를 수행합니다.
+
+    Args:
+        filename (str): Excel 파일의 이름입니다.
+        sheet_idx (int, optional): 읽을 시트의 인덱스입니다. 기본값은 0입니다.
+
+    Returns:
+        tuple: 열 개수 사전과 DataFrame을 포함하는 튜플입니다.
+
+    한글로:
+
+    주어진 파일 이름과 시트 인덱스를 사용하여 Excel 파일을 로드하고 데이터 전처리를 수행합니다.
+
+    인수:
+        filename (str): Excel 파일의 이름입니다.
+        sheet_idx (int, optional): 읽을 시트의 인덱스입니다. 기본값은 0입니다.
+
+    반환값:
+        tuple: 열 개수 사전과 DataFrame을 포함하는 튜플입니다.
+    """
+    file_path = './upload/' + filename
+    fname, ext = os.path.splitext(filename)
+    if ext == '.xls':
+        # xls 파일을 xlsx로 변환하는 로직 필요
+        # cvt_xls_to_xlsx(file_path, file_path + 'x')
+        file_path = file_path + 'x'
+
+    # Pandas를 사용하여 Excel 파일 읽기
+    df = pd.read_excel(file_path, sheet_name=sheet_idx)
+
+    # 각 행의 비어 있지 않은 셀 개수 계산
+    column_cnt_list = df.apply(lambda x: x.count(), axis=1).to_dict()
+
+    # DataFrame의 각 열에 대해 NaN을 None으로 변환
+    # DataFrame의 각 열에 대해 float 데이터 유형을 object로 변환하고, NaN 및 빈 문자열을 None으로 변환
+    for col in df.columns:
+        if df[col].dtype == float:
+            df[col] = df[col].astype(object)
+        df[col] = df[col].where(pd.notna(df[col]) & (df[col] != ''), None)
+
+    return column_cnt_list, df
+
+
+def search_pcb_header_each_pandas(df):
+    """
+    pandas DataFrame에서 헤더 열을 API 요청을 통해 검색하고 ML 모델을 호출하여 찾습니다.
+
+    Args:
+        df (pandas.DataFrame): 검색할 DataFrame입니다.
+
+    Returns:
+        dict: 헤더 열의 인덱스와 헤더에 대한 자세한 정보를 포함하는 딕셔너리입니다.
+            - 'headerColumnIdx': 헤더 열의 인덱스입니다.
+            - 'headerDetail': 헤더 열에 대한 자세한 정보입니다.
+    """
+    sentence_results = []
+    score_tuple = {}
+    score_tuple_for_bom = {}
+
+    headers = pd.DataFrame([df.columns], columns=df.columns)
+    df_with_headers = pd.concat([headers, df]).reset_index(drop=True)
+
+    for idx, row in df_with_headers.iterrows():
+        row_list = row.fillna('').astype(str).tolist()
+        row_list_for_bom = [
+            {'type': type(val).__name__,
+             'columnIdx': idx,
+             'columnTarget': None,
+             'query': str(val).strip()} for val in row
+        ]
+
+        # 실제 API에 기반하여 적절하게 수정해야 하는 API 요청 예시입니다.
+        URL = 'http://localhost:8080/api/pcbColumn/_searchSentenceList'
+        response = reqs.post(URL, json={'queryColumnNameList': row_list})
+        body = json.loads(response.text)
+        response_data = body['data']
+        score_tuple[idx] = response_data['averageScore']
+        sentence_results.append(response_data)
+
+        # 실제 ML 모델에 기반하여 적절하게 수정해야 하는 ML 모델 호출 예시입니다.
+        score_tuple_for_bom[idx] = bom_ml(row_list_for_bom, True)
+
+        # Break condition - this might need to be adapted
+        if idx == 13:
+            break
+
+    # Logic to determine the header column index
+    header_column_idx = get_index_max_value(score_tuple)
+    if score_tuple_for_bom[header_column_idx]['averageScore'] < 50:
+        header_column_idx = header_column_idx + 1
+
+    return {'headerColumnIdx': header_column_idx, 'headerDetail': sentence_results[header_column_idx]}
+
+
+def search_pcb_column_each_pandas(df, start_item_index, header_column_search_list):
+    ml_results = []
+    column_idx = start_item_index
+
+    headers = pd.DataFrame([df.columns], columns=df.columns)
+    df_with_headers = pd.concat([headers, df]).reset_index(drop=True)
+
+    for row_idx, row in df_with_headers.iterrows():
+        # 행 인덱스가 start_item_index 미만인 경우 건너뜁니다.
+        if row_idx < start_item_index:
+            continue
+
+        row_list = []
+        ml_result = {}
+
+        # 행의 각 셀에 대해 처리합니다.
+        for col_idx, val in enumerate(row):
+            column_target = None
+            if len(header_column_search_list) > col_idx:
+                column_target = header_column_search_list[col_idx].get('target', None)
+
+            row_list.append({
+                'type': type(val).__name__,
+                'columnIdx': col_idx,
+                'columnTarget': column_target,
+                'query': str(val).strip() if pd.notnull(val) else ''
+            })
+
+        is_pcb_item = 'isPcbItem'
+        if len(row_list) != 0:
+            if percent_none_for_is_pcb([l['query'] for l in row_list], 90):
+                ml_result[is_pcb_item] = False
+            else:
+                ml_result = bom_ml(row_list)
+                if ml_result['averageScore'] > 50:
+                    ml_result[is_pcb_item] = True
+                else:
+                    ml_result[is_pcb_item] = False
+        else:
+            ml_result[is_pcb_item] = False
+
+        ml_result['columnIdx'] = column_idx
+        column_idx = column_idx + 1
+        ml_results.append(ml_result)
+
+    return ml_results
+
+
+def search_pcb_column_cols_pandas(df, start_item_index, header_column_search_list):
+    """
+    pandas DataFrame을 사용하여 PCB 열 열을 검색합니다.
+
+    매개변수:
+        df (pandas.DataFrame): 검색할 DataFrame입니다.
+        start_item_index (int): 시작 행의 인덱스입니다.
+        header_column_search_list (list): 대상 열에 대한 정보를 포함하는 딕셔너리의 리스트입니다.
+
+    반환값:
+        list: 각 열에 대한 기계 학습 결과의 리스트입니다.
+    """
+    ml_results = []
+
+    # DataFrame의 각 열을 반복합니다.
+    for col_idx, col_name in enumerate(df.columns):
+        col = df[col_name]
+        col_list = []
+        ml_result = {}
+
+        # start_item_index 이후의 행들을 반복합니다.
+        for row_idx in range(start_item_index, len(col)):
+            val = col[row_idx]
+            column_target = None
+            if len(header_column_search_list) > row_idx:
+                column_target = header_column_search_list[row_idx].get('target', None)
+
+            col_list.append({
+                'type': type(val).__name__,
+                'rowIdx': row_idx,
+                'columnTarget': column_target,
+                'query': str(val).strip() if val is not None else ''
+            })
+
+        # 머신러닝 모델이나 분석 로직을 적용합니다.
+        if col_list:
+            ml_result = bom_ml_cols(col_list)
+
+        ml_results.append(ml_result)
+
+    # 추가적인 후처리 작업이 있을 경우 수행
+    find_update_part_number_average_score(ml_results)
+
+    return ml_results

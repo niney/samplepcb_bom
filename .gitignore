@@ -11,4 +11,7 @@ __pycache__
 # upload folder
 upload
 
+# test folder
+test
+
 config.py

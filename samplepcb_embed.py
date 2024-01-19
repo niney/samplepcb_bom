@@ -8,6 +8,7 @@ import logging
 from logging import handlers
 
 import numpy as np
+from flask_caching import Cache
 
 import column_analysis as colanal
 import sentence_hub as sh
@@ -58,6 +59,10 @@ from flask import request
 
 app = Flask(__name__)
 
+cache = Cache(app, config={
+    'CACHE_TYPE': 'SimpleCache',  # 간단한 메모리 기반 캐시
+    'CACHE_DEFAULT_TIMEOUT': 1800  # 캐시 유지 시간(초)
+})
 
 @app.route('/doc2vect', methods=['POST'])
 def req_doc2vect():
@@ -69,7 +74,31 @@ def req_doc2vect():
     return jsonify(ccResult)
 
 
+def generate_cache_key_by_qlist():
+    # 'q[]' 파라미터를 기반으로 리스트를 얻습니다.
+    query_list = request.form.getlist('q[]')
+
+    # 리스트를 정렬하여 순서가 달라도 동일한 내용이면 같은 키를 생성하도록 합니다.
+    query_list.sort()
+
+    # 리스트를 문자열로 변환하여 캐시 키로 사용합니다.
+    return str(query_list)
+
+
+def generate_cache_key_by_target():
+    # 'target'과 'targetList[]' 파라미터 값을 얻습니다.
+    target = request.form['target']
+    target_list = request.form.getlist('targetList[]')
+
+    # 리스트를 정렬하여 순서가 달라도 동일한 내용이면 같은 키를 생성하도록 합니다.
+    target_list.sort()
+
+    # 'target'과 정렬된 'targetList'를 결합하여 캐시 키로 사용합니다.
+    return f"{target}_{str(target_list)}"
+
+
 @app.route('/docs2vects', methods=['POST'])
+@cache.cached(timeout=50, key_prefix=generate_cache_key_by_qlist)
 def req_docs2vects():
     query = request.form.getlist('q[]')
     vects = sh.docs2vects(query)
@@ -78,6 +107,7 @@ def req_docs2vects():
 
 
 @app.route('/embedScore', methods=['POST'])
+@cache.cached(timeout=50, key_prefix=generate_cache_key_by_target)
 def req_embed_score():
     target = request.form['target']
     query = request.form.getlist('targetList[]')

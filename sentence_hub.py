@@ -7,7 +7,8 @@ model = None
 
 def init():
     global model
-    module_url = "https://tfhub.dev/google/universal-sentence-encoder-multilingual-large/3" #@param ["https://tfhub.dev/google/universal-sentence-encoder/4", "https://tfhub.dev/google/universal-sentence-encoder-large/5"]
+    # module_url = "https://tfhub.dev/google/universal-sentence-encoder-multilingual-large/3" #@param ["https://tfhub.dev/google/universal-sentence-encoder/4", "https://tfhub.dev/google/universal-sentence-encoder-large/5"]
+    module_url = "https://www.kaggle.com/models/google/universal-sentence-encoder/frameworks/TensorFlow2/variations/multilingual-large/versions/2"
     model = hub.load(module_url)
 
 def doc2vect(text):

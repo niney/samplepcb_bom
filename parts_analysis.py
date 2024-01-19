@@ -1,10 +1,5 @@
-import hashlib
-import os
 import re
-from urllib.parse import urlparse, parse_qs
-
 import requests
-from bs4 import BeautifulSoup
 
 from data_extractor import DataExtractor
 
@@ -12,49 +7,6 @@ extractor = DataExtractor()
 
 
 class PartsAnalysis:
-
-    def extract_param_value(self, url, param_name):
-        """
-        주어진 URL에서 지정된 파라미터 이름의 값을 반환합니다.
-
-        Parameters:
-        - url (str): 파라미터 값을 추출할 URL
-        - param_name (str): 추출할 파라미터의 이름
-
-        Returns:
-        - str or None: 찾은 파라미터의 값 또는 해당 파라미터가 없을 경우 None
-        """
-        parsed_url = urlparse(url)
-        params = parse_qs(parsed_url.query)
-
-        return params.get(param_name, [None])[0]
-
-    def fetch_page_content(self, url, cacheDir):
-        # 캐시 디렉터리가 없으면 생성
-        if not os.path.exists(cacheDir):
-            os.mkdir(cacheDir)
-
-        # URL을 해시값으로 변환하여 파일명으로 사용
-        url_hash = hashlib.md5(url.encode()).hexdigest()
-        cache_filepath = os.path.join(cacheDir, url_hash)
-
-        # 파일이 존재하면 캐싱된 내용을 사용
-        if os.path.exists(cache_filepath):
-            with open(cache_filepath, 'r', encoding='utf-8') as f:
-                cached_html = f.read()
-                return BeautifulSoup(cached_html, 'html.parser')
-
-        # 캐싱된 파일이 없으면 웹 페이지의 내용을 가져온 후, 파일에 저장
-        response = requests.get(url)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        content = soup.select_one('#ajaxContents')
-
-        # 해당 내용을 파일에 저장
-        with open(cache_filepath, 'w', encoding='utf-8') as f:
-            f.write(str(content))
-
-        return content
 
     def parse_title(self, text):
         # 제조사 정보를 []에서 추출
@@ -67,23 +19,28 @@ class PartsAnalysis:
 
         return text, product_name, manufacturer
 
-    def parse_string(self, text):
+    def parse_string(self, text, reference_prefix=None):
         classifications = {'productName': []}
 
         units = {
             'watt': re.compile(r"([0-9.]+/[0-9.]+|[0-9.]+)\s*([Ww]|watt(s)?|WATT(S)?)\b", re.IGNORECASE),
             'errorRange': re.compile(r"[±]?[0-9.]+(\s*%)"),
             'ohm': re.compile(r"([0-9.]+/[0-9.]+)?[0-9.]*\s*(k|m)?(ohm(s)?|Ω)\b", re.IGNORECASE),
-            'capacitor': re.compile(r"[0-9.]+(?:μF|µF|uF|nF|pF|mF|F)(?![a-zA-Z])", re.IGNORECASE),
+            'parrot': re.compile(r"(?<!\S)[0-9.]+(?:μF|µF|uF|nF|pF|mF|F)(?!\S)", re.IGNORECASE),
             'voltage': re.compile(
-                r"([0-9.]+/[0-9.]+)?[0-9.]*\s*(V|v|kV|KV|kv|mV|MV|mv|µV|UV|uv|Volt|volt|vdc|VDC|kvdc|KVDC)\b",
+                # r"([0-9.]+/[0-9.]+)?[0-9.]*\s*(V|v|kV|KV|kv|mV|MV|mv|µV|UV|uv|Volt|volt|vdc|VDC|kvdc|KVDC)\b",
+                r"\b[0-9.]+\s*(V|v|kV|KV|kv|mV|MV|mv|µV|UV|uv|Volt|volt|vdc|VDC|kvdc|KVDC)\b",
                 re.IGNORECASE),
             'temperature': re.compile(r"(-?\d+\.?\d*)\s?(℃|°C)"),
             'size': re.compile(
-                r"((\d+\.\d+|\d+)([xX*])(\d+\.\d+|\d+)(([xX*])(\d+\.\d+|\d+))?)|((\d+)(?=사이즈))|(\d+\.?\d*mm)",
+                r"(?<!\S)(\d+\.\d+|\d+)(([xX*](\d+\.\d+|\d+))?([xX*](\d+\.\d+|\d+))?(\s*(mm|사이즈))?)(?=\s|$)",
                 re.IGNORECASE),
-            'inductor': re.compile(r"[0-9.]+(?:pH|nH|uH|mH|H)(?![a-zA-Z])", re.IGNORECASE),
-            'current': re.compile(r"[0-9.]+(?:uA|µA|mA|A)(?![a-zA-Z])", re.IGNORECASE)
+            # r"(\d+\.\d+|\d+)([xX*])(\d+\.\d+|\d+)(?!\S)(\s*|$)(([xX*])(\d+\.\d+|\d+)(?!\S)(\s*|$))?",
+            # r"((\d+\.\d+|\d+)([xX*])(\d+\.\d+|\d+)(([xX*])(\d+\.\d+|\d+))?)|((\d+)(?=사이즈))|(\d+\.?\d*mm)",
+            # re.IGNORECASE),
+            'henry': re.compile(r"(?<!\S)[0-9.]+(?:pH|nH|uH|mH|H)(?!\S)(?=\s|$)", re.IGNORECASE),
+            'current': re.compile(r"(?<!\S)[0-9.]+(?:uA|µA|mA|A)\b", re.IGNORECASE),
+            'frequency': re.compile(r"[0-9.]+(?:Hz|kHz|MHz|GHz)\b", re.IGNORECASE),
         }
 
         for token in text:
@@ -92,72 +49,44 @@ class PartsAnalysis:
             for unit, pattern in units.items():
                 match = pattern.search(token)
                 if match:
-                    matched_units.append(unit)
-                    if unit == '온도':  # 온도는 숫자만 추출
+                    if unit == 'temperature':  # 온도는 숫자만 추출
                         classifications[unit] = match.group(1)
+                        matched_units.append(unit)
+                    if unit == 'size':
+                        size = match.group()
+                        if not size.isdigit() and not self.is_float(size):  # size 값이 숫자가 아닌 경우에만 저장
+                            classifications[unit] = size
+                            matched_units.append(unit)
                     else:
                         classifications[unit] = match.group()
+                        matched_units.append(unit)
+
+            # referencePrefix를 사용하여 특정 분류에 append_text_to_specific_format 실행
+            if reference_prefix and reference_prefix in ['C', 'R', 'L']:
+                unit_mapping = {'C': 'parrot', 'R': 'ohm', 'L': 'henry'}
+                target_unit = unit_mapping.get(reference_prefix)
+                if target_unit not in classifications:
+                    specific_format_result = self.append_text_to_specific_format(token, reference_prefix)
+                    if specific_format_result:
+                        matched_units.append(specific_format_result)
+                        classifications[target_unit] = specific_format_result
 
             if not matched_units:
                 classifications['productName'].append(token)
 
+        # 'size' 키가 classifications에 없는 경우에만 실행
+        if 'size' not in classifications:
+            size = extractor.extract_size_from_title(text)  # size 값을 추출
+            # 추출된 size가 None이 아닌 경우에만 classifications에 추가
+            if size is not None:
+                classifications['size'] = size
+                classifications['productName'] = [name for name in classifications['productName'] if name != size]
+
         return classifications
 
-    def make_item(self, url):
-        items = []  # 페이지별로 항목을 담을 리스트
-
-        code = param_value = self.extract_param_value(url, "code")
-        table = self.fetch_page_content(url, "eleparts_cache_" + code)
-        rows = table.find_all('tr')
-
-        for row in rows:
-            title_info = row.find('li', {'class': 'title'})
-            sub_title_info = row.find('li', {'class': 'subtitle'})
-            price_info = row.find('span', {'class': 'boldTxt2 lnonevat'})
-
-            # title 파싱
-            title_text, product_name, manufacturer = self.parse_title(
-                title_info.get_text(strip=True)) if title_info else (
-                "", "", None)
-            # subTitle 파싱
-            sub_title_info_get_text = sub_title_info.get_text(strip=True) if sub_title_info else ""
-            sub_title_text = self.split_text(sub_title_info_get_text)
-            sub_classification = self.parse_string(sub_title_text)
-
-            # title에서 정보 파싱
-            title_text_split = self.split_text(title_text)
-            title_classification = self.parse_string(title_text_split)
-
-            for key in title_classification.keys():
-                if not sub_classification.get(key):  # subTitle 정보가 없는 경우만 적용
-                    sub_classification[key] = title_classification[key]
-
-            price_text = price_info.get_text(strip=True) if price_info else ""
-
-            item = {
-                'title': title_text,
-                'subTitle': sub_title_info_get_text,
-                'watt': sub_classification.get('와트'),
-                'tolerance': sub_classification.get('오차범위'),
-                'ohm': sub_classification.get('옴'),
-                'condenser': sub_classification.get('콘덴서'),
-                'voltage': sub_classification.get('전압'),
-                'temperature': sub_classification.get('온도'),
-                'size': sub_classification.get('사이즈')
-                        or extractor.extract_size_from_title(sub_title_text)
-                        or extractor.extract_size_from_title(title_text),
-                'inductor': sub_classification.get('인덕터'),
-                'current': sub_classification.get('전류'),
-                'productName': product_name,
-                'manufacturer': manufacturer,
-                'price': price_text
-            }
-            # print(item)
-            items.append(item)
-
-        return items
-
     def split_text(self, text):
+        # 'μ'와 'µ'를 'u'로 바꾸기
+        text = text.replace('μ', 'u').replace('µ', 'u')
         # '[...]'를 찾아 저장하고 원래 텍스트에서 삭제
         pattern_bracket = re.compile(r'\[.*?\]')
         brackets = pattern_bracket.findall(text)
@@ -185,3 +114,243 @@ class PartsAnalysis:
         tokens.extend(brackets)
 
         return tokens
+
+    def custom_split_texts(self, input_array):
+        processed_array = []
+
+        for item in input_array:
+            # '_'로 분리된 요소들
+            parts = item.split('_')
+
+            # 각 부분에서 단일 문자열 제외하고 배열에 추가
+            for part in parts:
+                if len(part) > 1 or not part.isalpha():
+                    processed_array.append(part)
+
+        return processed_array
+
+    def parse_pcb_bom_string_to_dict(self, bom_string):
+        # 원래 문자열을 저장
+        original_text = bom_string
+
+        # 특수 문자를 공백으로 대체할 문자 정의
+        special_chars = "`~!@$^&|\\=?:;'\",/<>,"
+
+        # 숫자/숫자W 형태를 보존하기 위한 임시 대체 문자열
+        temp_replacement = "TEMP_SLASH"
+
+        # 숫자/숫자W 형태를 임시 문자열로 대체
+        watt_pattern = re.compile(r'(\d+)/(\d+W)')
+        bom_string = watt_pattern.sub(r'\1' + temp_replacement + r'\2', bom_string)
+
+        # 괄호를 제외한 특수 문자를 공백으로 대체
+        for char in special_chars:
+            bom_string = bom_string.replace(char, " ")
+
+        # 공백으로 문자열을 분할하여 단어 배열 생성
+        parts = bom_string.split()
+
+        # 임시 대체 문자열을 다시 슬래시로 변경
+        parts = [part.replace(temp_replacement, '/') for part in parts]
+
+        # 괄호 처리
+        processed_parts = []
+        for part in parts:
+            if '(' in part and ')' in part:
+                processed_parts.append(part.replace(f'({part[part.find("(") + 1:part.find(")")]})', ''))
+                processed_parts.append(part[part.find("(") + 1:part.find(")")])
+            else:
+                processed_parts.append(part)
+
+        # 데이터를 반환할 딕셔너리 생성
+        return {
+            "originText": original_text,
+            "words": self.split_text(original_text)
+        }
+
+    def parse_pcb_bom_strings_to_dict(self, bom_strings):
+        # 원래 문자열들을 저장 (공백으로 구분된 하나의 문자열로 결합)
+        original_text = ' '.join(bom_strings)
+
+        # 특수 문자를 공백으로 대체할 문자 정의
+        special_chars = "`~!@$^&|\\=?:;'\",/<>,"
+
+        # 숫자/숫자W 형태를 보존하기 위한 임시 대체 문자열
+        temp_replacement = "TEMP_SLASH"
+
+        processed_bom_strings = []
+        for bom_string in bom_strings:
+            # 숫자/숫자W 형태를 임시 문자열로 대체
+            watt_pattern = re.compile(r'(\d+)/(\d+W)')
+            bom_string = watt_pattern.sub(r'\1' + temp_replacement + r'\2', bom_string)
+
+            # 괄호를 제외한 특수 문자를 공백으로 대체
+            for char in special_chars:
+                bom_string = bom_string.replace(char, " ")
+
+            # 임시 대체 문자열을 다시 슬래시로 변경
+            bom_string = bom_string.replace(temp_replacement, '/')
+
+            processed_bom_strings.append(bom_string)
+
+        # 공백으로 문자열을 분할하여 단어 배열 생성
+        parts = []
+        for string in processed_bom_strings:
+            # parts.extend(string.split())
+            # parts.extend(string)
+            parts.append(string)
+
+        # 괄호 처리
+        processed_parts = []
+        for part in parts:
+            if part == '':
+                continue
+            if '(' in part and ')' in part:
+                processed_parts.append(part.replace(f'({part[part.find("(") + 1:part.find(")")]})', ''))
+                processed_parts.append(part[part.find("(") + 1:part.find(")")])
+            else:
+                processed_parts.append(part)
+
+        # processed_parts 배열의 각 항목을 self.split_text로 처리하고 결과를 하나의 배열로 평탄화
+        # flat_processed_parts = []
+        # for part in processed_parts:
+        #     flat_processed_parts.extend(self.split_text(part))
+
+        # 데이터를 반환할 딕셔너리 생성
+        return {
+            "originText": original_text,
+            "words": processed_parts
+        }
+
+    def classification(self, split_texts, reference_prefix=None):
+        # split_text 이미 했다고 가정한다
+        # 분할된 토큰을 기반으로 추가 분류 수행
+        classification_result = self.parse_string(split_texts, reference_prefix)
+
+        # 키 값을 제외하고 value만 포함하며, 'productName'의 값은 제외
+        flat_classification = " ".join([value for key, value in classification_result.items() if key != 'productName'])
+
+        # 분류 결과를 딕셔너리 형태로 변환하여 반환
+        return {
+            "originalClassification": classification_result,
+            "flatClassification": flat_classification
+        }
+
+    def analyze_and_classify_bom(self, bom_item_list, reference_prefix=None):
+        # Filtering and joining the query values
+        query_list = [item['query'] for item in bom_item_list]
+        # Parse the BOM string into its components
+        parsed_data = self.parse_pcb_bom_strings_to_dict(query_list)
+
+        # Use the parsed 'words' as input for further classification
+        classification_result = self.classification(parsed_data['words'], reference_prefix)
+
+        # Combine the results into a single dictionary
+        return {
+            "parsedData": parsed_data,
+            "classificationResult": classification_result
+        }
+
+    def update_component_queries(self, data, excluded_targets):
+        """
+        Function to process data and update numeric queries.
+        It counts entries where 'target' is 1 and 'query' matches "C/D/R/L + number".
+        If the count differs from a numeric query (where 'target' is not 1, 4, 99, 100, or 98),
+        it updates the numeric query by appending a unit based on the corresponding letter.
+        """
+
+        # Initialize counts for C, R, L
+        target_1_counts = {'C': 0, 'R': 0, 'L': 0}
+
+        # Iterate through the data to count C, R, L entries
+        for entry in data:
+            if entry['target'] == 1 and entry['query']:
+                # Split the query values and count each type
+                query_values = entry['query'].split(', ')
+                for value in query_values:
+                    if value[0] in ['C', 'R', 'L'] and all(c.isdigit() for c in value[1:]):
+                        target_1_counts[value[0]] += 1
+
+        update_query = ''
+        # Update numeric queries
+        for entry in data:
+            if entry['target'] not in excluded_targets and entry['query'].isdigit():
+                query_value = int(entry['query'])
+                if query_value <= 500000:
+                    for letter, count in target_1_counts.items():
+                        if count and query_value != count:
+                            suffix = {'R': 'Ohm', 'C': 'F', 'L': 'H'}.get(letter, '')
+                            update_query = entry['query']
+                            entry['query'] = entry['query'] + suffix
+
+        return update_query
+
+    def append_text_to_specific_format(self, input_string, append_text):
+        regex = None
+        text_to_append = ''
+
+        if append_text == 'C':
+            regex = re.compile(r"\b\d+[mkMunp]\b")
+            text_to_append = 'F'
+        elif append_text == 'R':
+            # 숫자k 혹은 숫자m 형식과 숫자R 혹은 숫자r 형식을 찾습니다.
+            regex = re.compile(r"\b\d+k\b|\b\d+m\b|\b\d+K\b|\b\d+M\b|\b\d+r\b|\b\d+R\b")
+            text_to_append = 'Ohm'
+        elif append_text == 'L':
+            regex = re.compile(r"\b\d+m\b|\b\d+u\b|\b\d+M\b|\b\d+U\b")
+            text_to_append = 'H'
+
+        if regex is None:
+            return None
+
+        # 입력 문자열에서 모든 일치 항목을 찾아 해당 문자를 추가합니다.
+        result = regex.sub(
+            lambda match: match.group(0).rstrip("rR") + text_to_append if 'r' in match.group(0) or 'R' in match.group(
+                0) else match.group(0) + text_to_append, input_string)
+
+        # 만약 변경된 부분이 없으면 빈 문자열을 반환
+        return result if result != input_string else ''
+
+    def is_float(self, str):
+        try:
+            float(str)
+            return True
+        except ValueError:
+            return False
+
+
+    def is_part_number(self, s):
+        """
+        Further refined function to determine if a given string is a product name.
+        It now accepts strings that are only numbers or a combination of numbers and non-unit characters.
+
+        Criteria:
+        1. Length of the string is at least 4.
+        2. May contain '-' or parentheses.
+        3. Contains a combination of letters and numbers.
+        4. Not just a combination of (possibly floating) numbers and a single known unit.
+        5. Accepts strings that are purely numbers or combinations of numbers and non-unit characters.
+        """
+        # Known units in PCB products
+        units = ["Hz", "kHz", "MHz", "GHz", "V", "mV", "kV", "A", "mA", "μA",
+                 "Ω", "kΩ", "MΩ", "W", "mW", "kW", "F", "μF", "nF", "pF", "H", "mH", "μH"]
+
+        # Check if the string is just a combination of (possibly floating) numbers and a single known unit
+        if any(re.fullmatch(rf'\d+(\.\d+)?\s*{unit}', s) for unit in units):
+            return False
+
+        # Accepts strings that are purely numeric or combinations of numbers and non-unit characters
+        if re.fullmatch(r'\d+', s) or re.search(r'\d+[a-zA-Z]+', s):
+            return True
+
+        # The rest of the checks from the previous versions
+        if len(s) < 4:
+            return False
+
+        if not re.search(r'[a-zA-Z]', s) and not re.search(r'[0-9]', s):
+            return False
+
+        if '-' in s or '(' in s or ')' in s:
+            return True
+
+        return True
