@@ -17,7 +17,7 @@ class DataExtractor:
         self.numeric_sizes = [size for size in self.sizes if num_pattern.match(size)]
         self.other_sizes = [size for size in self.sizes if size not in self.numeric_sizes]
 
-    def extract_size_from_title(self, titles):
+    def extract_size_from_title(self, titles, reference_pattern=None):
         if isinstance(titles, list):
             title_words = [word.lower() for word in titles]
         elif isinstance(titles, str):
@@ -28,6 +28,9 @@ class DataExtractor:
         # 숫자 형식의 사이즈를 우선적으로 찾기
         for size in self.numeric_sizes:
             for word in title_words:
+                if reference_pattern:
+                    if word[0] in ['c', 'r']:
+                        word = '0' + word[1:]
                 # 단어가 사이즈로 시작하고 그 뒤에 공백이나 문자열의 끝이 오는 경우 반환
                 if word.startswith(size) and (len(word) == len(size) or not word[len(size)].isalnum()):
                     return size

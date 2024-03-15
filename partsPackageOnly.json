@@ -328,5 +328,6 @@
     "Plugin,13x21mm",
     "Plugin,13x30mm",
     "Plugin,13x25mm",
-    "SIP"
+    "SIP",
+    "SMD"
 ]

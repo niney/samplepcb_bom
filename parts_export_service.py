@@ -30,8 +30,9 @@ class PartsExportService(object):
     def extract_values_by_analysis_result(self, data):
         # 우선 순위에 따라 체크할 필드 목록
         priority_fields = ['partNumber', 'candidatePartNumber', 'productName']
-        combined_fields = ['watt', 'errorRange', 'ohm', 'parrot', 'voltage', 'temperature', 'size', 'henry', 'current',
-                           'frequency']
+        combined_fields = ['watt', 'errorRange', 'ohm', 'parrot',
+                           'voltage', 'temperature', 'size', 'henry',
+                           'current', 'frequency', 'package']
 
         # priority_fields 필드를 먼저 확인
         for field in priority_fields:

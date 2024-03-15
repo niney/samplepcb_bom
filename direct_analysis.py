@@ -100,18 +100,25 @@ class DirctAnalysis:
         none_digit_cnt = 0
         any_list_len = len(any_list)
         for val in any_list:
-            if isinstance(val, str) and val.isdigit():
-                is_digit = True
-            elif isinstance(val, numbers.Number):
-                is_digit = True
-            elif val is None or val == 'None':
+            if val is None or val == 'None':
                 any_list_len -= 1
                 continue
-            else:
-                continue
 
-            if is_digit:
+            is_digit = False
+            if isinstance(val, str) and val.isdigit():
+                is_digit = True
                 val = int(val)
+            elif isinstance(val, numbers.Number):
+                is_digit = True
+                val = float(val)
+            else:
+                conversion_result, converted_val = DirctAnalysis.convert_to_int_if_no_decimal(val)
+                if conversion_result:
+                    is_digit = True
+                    val = converted_val
+
+            if not is_digit:
+                continue
 
             if pre_val and pre_val < val:
                 increment_cnt += 1
@@ -122,6 +129,14 @@ class DirctAnalysis:
             return 0
 
         return (increment_cnt / (any_list_len - none_digit_cnt)) * 100
+
+    @staticmethod
+    def convert_to_int_if_no_decimal(val):
+        try:
+            converted_val = int(float(val))
+            return True, converted_val
+        except ValueError:
+            return False, val
 
     @staticmethod  # 정적 메소드로 변경
     def percent_digit_by_list(any_list):

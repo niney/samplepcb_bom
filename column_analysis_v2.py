@@ -8,6 +8,7 @@ import openpyxl
 import pandas as pd
 import requests as reqs
 import xlrd
+import asyncio
 from openpyxl.workbook import Workbook
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -493,9 +494,9 @@ def search_pcb_header_each_pandas(df):
     return {'headerColumnIdx': header_column_real_idx, 'headerDetail': sentence_results[header_column_idx]}
 
 
-def search_pcb_column_each_pandas(df, start_item_index, header_column_search_list):
+async def search_pcb_column_each_pandas(df, start_item_index, header_column_search_list):
     ml_results = []
-    # start_item_index = 14
+    # start_item_index = 8
     column_idx = start_item_index
 
     for row_idx, row in df.iterrows():
@@ -530,8 +531,19 @@ def search_pcb_column_each_pandas(df, start_item_index, header_column_search_lis
         analysis_result['columnIdx'] = row_idx
         analysis_result['rowList'] = row_list
         extract_result = parts_export_service.extract_values_by_analysis_result(analysis_result['classificationResult'])
-        if not parts_analyzer.is_float(extract_result):
-            analysis_result['classificationResult']['searchText'] = extract_result
+        # if (not parts_analyzer.is_float(extract_result) or
+        #         parts_analyzer.is_float(extract_result) and int(extract_result) > 500000):
+        analysis_result['classificationResult']['searchText'] = extract_result
+        octopart_result = await search_service.search_octopart(extract_result)
+        part = {}
+        if extract_result and octopart_result['search']['results'] is not None:
+            search_part = octopart_result['search']['results'][0]['part']
+            part['mpn'] = search_part['mpn']
+            part['name'] = search_part['name']
+            part['short_description'] = search_part['short_description']
+            part['manufacturer'] = search_part['manufacturer']['name']
+        analysis_result['classificationResult']['part'] = part
+
         ml_results.append(analysis_result)
 
     return ml_results
@@ -589,7 +601,9 @@ def all_analyze_bom(bom_item_list):
         elif item['target'] == URL:
             classification_result['url'] = item['query']
         elif item['target'] == PACKAGE and 'glScore' in item and item['glScore'] > 99:
-            classification_result['package'] = item['query']
+            package_name = extractor.extract_size_from_title(item['query'], reference_pattern)
+            if package_name:
+                classification_result['package'] = package_name
         elif item['target'] == PART_NUMBER:
             part_classify_result = classification(item['query'], reference_pattern)
             # 유효한 부품 번호만을 포함할 새로운 리스트 생성
@@ -873,7 +887,7 @@ def analyzer_file(filename):
     header_list = header_result['headerDetail']['pcbColumnSearchList']
     cols_detail = search_pcb_column_cols_pandas(df, header_idx, header_list)
     update_col_analysis_to_header(header_list, cols_detail)
-    item_detail = search_pcb_column_each_pandas(df, header_idx, header_list)
+    item_detail = asyncio.run(search_pcb_column_each_pandas(df, header_idx, header_list))
 
     data = {
         'headerColumnIdx': header_idx,

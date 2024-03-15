@@ -243,7 +243,10 @@ class PartsAnalysis:
         parsed_data = self.parse_pcb_bom_strings_to_dict(query_list)
 
         # Use the parsed 'words' as input for further classification
-        classification_result = self.classification(parsed_data['words'], reference_prefix)
+        split_words = []
+        for word in parsed_data['words']:
+            split_words.append(" ".join(self.split_text(word)))
+        classification_result = self.classification(split_words, reference_prefix)
 
         # Combine the results into a single dictionary
         return {
